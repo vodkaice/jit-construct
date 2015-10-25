@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include "util.h"
-
+#include <time.h>
 |.arch arm
 |.actionlist actions
 |
@@ -11,17 +11,58 @@
 
 #define Dst &state
 #define MAX_NESTING 256
+static double diff_in_second(struct timespec t1, struct timespec t2)
+{
+    struct timespec diff;
+    if (t2.tv_nsec-t1.tv_nsec < 0) {
+        diff.tv_sec  = t2.tv_sec - t1.tv_sec - 1;
+        diff.tv_nsec = t2.tv_nsec - t1.tv_nsec + 1000000000;
+    } else {
+        diff.tv_sec  = t2.tv_sec - t1.tv_sec;
+        diff.tv_nsec = t2.tv_nsec - t1.tv_nsec;
+    }
+    return (diff.tv_sec + diff.tv_nsec / 1000000000.0);
+}
+
+int case_add(char **p)
+{
+    int value = 0;
+
+    while(**p && **p == '+'){
+	value++;
+	(*p)++;
+    }
+    (*p)--;
+    //return (value > 0 ? value:~value+1);
+    return value;
+}
+
+int case_shift(char **p){
+    int value = 0;
+    while(**p && **p == '>'){
+	value++;
+	(*p)++;
+    }
+    (*p)--;
+    //return (value > 0 ? value:~value+1);
+    return value;
+
+}
 
 int main(int argc, char *argv[])
 {
 	if (argc < 2) err("Usage: jit-arm <inputfile>");
 	dasm_State *state;
 	initjit(&state, actions);
+	
+	struct timespec start, end;
+	double cpu_time;
+	int value;
 
 	unsigned int maxpc = 0;
 	int pcstack[MAX_NESTING];
 	int *top = pcstack, *limit = pcstack + MAX_NESTING;
-
+	clock_gettime(CLOCK_REALTIME, &start);
 	// Function prologue.
 	|  push {PTR, r5, r7, lr}
 	|  mov  PTR, r0
@@ -29,19 +70,39 @@ int main(int argc, char *argv[])
 	for (char *p = read_file(argv[1]); *p; p++) {
 		switch (*p) {
 		case '>':
-			|  add  PTR, PTR, #1
+			value=1;
+			while(*(++p) == '>'){
+			    value++;
+			}
+			p--;
+			|  add  PTR, PTR, #value
 			break;
 		case '<':
-			|  sub  PTR, PTR, #1
+			value = 1;
+			while(*(++p) == '<'){
+			    value++;
+			}
+			p--;
+			|  sub  PTR, PTR, #value
 			break;
 		case '+':
+			value = 1;
+			while(*(++p) == '+'){
+			    value++;
+			}
+			p--;
 			|  ldrb  r5, [PTR]
-			|  add   r5, r5, #1
+			|  add   r5, r5, #value
 			|  strb  r5, [PTR]
 			break;
 		case '-':
+			value = 1;
+			while(*(++p) == '-'){
+			    value++;
+			}
+			p--;
 			|  ldrb  r5, [PTR]
-			|  sub   r5, r5, #1
+			|  sub   r5, r5, #value
 			|  strb  r5, [PTR]
 			break;
 		case '.':
@@ -63,6 +124,23 @@ int main(int argc, char *argv[])
 			// Each loop gets two pclabels: at the beginning and end.
 			// We store pclabel offsets in a stack to link the loop
 			// begin and end together.
+			if(*(p+1)=='-' && *(p+2)==']'){
+			    p+=2;
+			    | ldrb r5,[PTR]
+			    | mov r5, #0
+			    | strb r5,[PTR]
+			    break;
+			}
+			if(*(p+1)=='-' && *(p+2)=='>' && *(p+3)=='>' && *(p+4)=='>' && *(p+5)=='+' && *(p+6)=='<' && *(p+7)=='<' && *(p+8)=='<' && *(p+9)==']'){
+			    p+=9;
+			    | ldrb r5,[PTR]
+			    | ldrb r6,[PTR, #3]
+			    | add r5, r5, r6
+			    | strb r5,[PTR, #3]
+			    | mov r5, #0
+			    | strb r5,[PTR]
+			    break;
+			}
 			maxpc += 2;     // add two labels
 			*top++ = maxpc;
 			dasm_growpc(&state, maxpc);
@@ -90,5 +168,8 @@ int main(int argc, char *argv[])
 	fptr(mem);
 	free(mem);
 	free_jitcode(fptr);
+	clock_gettime(CLOCK_REALTIME, &end);
+	cpu_time = diff_in_second(start, end);
+	printf("execution time : %lf sec\n", cpu_time);
 	return 0;
 }

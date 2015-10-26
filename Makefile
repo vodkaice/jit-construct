@@ -52,7 +52,7 @@ jit0-arm: tests/jit0-arm.c
 	$(CROSS_COMPILE)gcc $(CFLAGS) -o $@ $^
 
 jit-arm: dynasm-driver.c jit-arm.h
-	$(CROSS_COMPILE)gcc $(CFLAGS) -o $@ -DJIT=\"jit-arm.h\" \
+	$(CROSS_COMPILE)gcc $(CFLAGS) -DOPT -o $@ -DJIT=\"jit-arm.h\" \
 		dynasm-driver.c
 jit-arm.h: jit-arm.dasc
 	$(LUA) dynasm/dynasm.lua -o $@ jit-arm.dasc
@@ -75,8 +75,9 @@ test_stack: tests/test_stack.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 run-arm:
-	$(QEMU_ARM) jit-arm progs/hanoi.b
-
+	for n in `seq 1 200` ;do\
+	    $(QEMU_ARM) jit-arm progs/hanoi.b ;\
+	done;
 perf-stat:
 	@sudo sh -c "echo 0 > /proc/sys/kernel/kptr_restrict"
 	@sudo sh -c "echo 1 > /proc/sys/vm/drop_caches"

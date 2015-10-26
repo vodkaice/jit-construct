@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "util.h"
 #include <time.h>
+#include <stdio.h>
 |.arch arm
 |.actionlist actions
 |
@@ -23,32 +24,6 @@ static double diff_in_second(struct timespec t1, struct timespec t2)
     }
     return (diff.tv_sec + diff.tv_nsec / 1000000000.0);
 }
-
-int case_add(char **p)
-{
-    int value = 0;
-
-    while(**p && **p == '+'){
-	value++;
-	(*p)++;
-    }
-    (*p)--;
-    //return (value > 0 ? value:~value+1);
-    return value;
-}
-
-int case_shift(char **p){
-    int value = 0;
-    while(**p && **p == '>'){
-	value++;
-	(*p)++;
-    }
-    (*p)--;
-    //return (value > 0 ? value:~value+1);
-    return value;
-
-}
-
 int main(int argc, char *argv[])
 {
 	if (argc < 2) err("Usage: jit-arm <inputfile>");
@@ -58,7 +33,8 @@ int main(int argc, char *argv[])
 	struct timespec start, end;
 	double cpu_time;
 	int value;
-
+	FILE *fd;
+	fd = fopen("./log2.txt","a");
 	unsigned int maxpc = 0;
 	int pcstack[MAX_NESTING];
 	int *top = pcstack, *limit = pcstack + MAX_NESTING;
@@ -70,22 +46,33 @@ int main(int argc, char *argv[])
 	for (char *p = read_file(argv[1]); *p; p++) {
 		switch (*p) {
 		case '>':
+#if defined(OPT)
 			value=1;
 			while(*(++p) == '>'){
 			    value++;
 			}
 			p--;
 			|  add  PTR, PTR, #value
+#endif
+#if defined(ORIG)
+			| add PTR, PTR, #1
+#endif
 			break;
 		case '<':
+#if defined(OPT)
 			value = 1;
 			while(*(++p) == '<'){
 			    value++;
 			}
 			p--;
 			|  sub  PTR, PTR, #value
+#endif
+#if defined(ORIG)
+			| sub PTR, PTR, #1
+#endif
 			break;
 		case '+':
+#if defined(OPT)
 			value = 1;
 			while(*(++p) == '+'){
 			    value++;
@@ -94,8 +81,15 @@ int main(int argc, char *argv[])
 			|  ldrb  r5, [PTR]
 			|  add   r5, r5, #value
 			|  strb  r5, [PTR]
+#endif
+#if defined(ORIG)
+			|  ldrb  r5, [PTR]
+			|  add   r5, r5, #1
+			|  strb  r5, [PTR]
+#endif
 			break;
 		case '-':
+#if defined(OPT)
 			value = 1;
 			while(*(++p) == '-'){
 			    value++;
@@ -104,6 +98,12 @@ int main(int argc, char *argv[])
 			|  ldrb  r5, [PTR]
 			|  sub   r5, r5, #value
 			|  strb  r5, [PTR]
+#endif
+#if defined(ORIG)
+			|  ldrb  r5, [PTR]
+			|  sub   r5, r5, #1
+			|  strb  r5, [PTR]
+#endif
 			break;
 		case '.':
 			|  mov r0, #1   // stdout
@@ -124,6 +124,7 @@ int main(int argc, char *argv[])
 			// Each loop gets two pclabels: at the beginning and end.
 			// We store pclabel offsets in a stack to link the loop
 			// begin and end together.
+#if defined(OPT)
 			if(*(p+1)=='-' && *(p+2)==']'){
 			    p+=2;
 			    | ldrb r5,[PTR]
@@ -131,6 +132,8 @@ int main(int argc, char *argv[])
 			    | strb r5,[PTR]
 			    break;
 			}
+#endif
+#if defined(OPT)
 			if(*(p+1)=='-' && *(p+2)=='>' && *(p+3)=='>' && *(p+4)=='>' && *(p+5)=='+' && *(p+6)=='<' && *(p+7)=='<' && *(p+8)=='<' && *(p+9)==']'){
 			    p+=9;
 			    | ldrb r5,[PTR]
@@ -141,6 +144,7 @@ int main(int argc, char *argv[])
 			    | strb r5,[PTR]
 			    break;
 			}
+#endif
 			maxpc += 2;     // add two labels
 			*top++ = maxpc;
 			dasm_growpc(&state, maxpc);
@@ -170,6 +174,7 @@ int main(int argc, char *argv[])
 	free_jitcode(fptr);
 	clock_gettime(CLOCK_REALTIME, &end);
 	cpu_time = diff_in_second(start, end);
-	printf("execution time : %lf sec\n", cpu_time);
+	fprintf(fd, "execution time: %lf sec\n", cpu_time);
+	fclose(fd);
 	return 0;
 }
